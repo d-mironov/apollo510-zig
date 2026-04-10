@@ -2,7 +2,7 @@ image: debian:bookworm-slim
 
 variables:
   # You can pin a specific nightly version (e.g., "0.15.0-dev.123+abcdef") or use "master"
-  ZIG_VERSION: "master"
+  ZIG_VERSION: "0.15.2"
   
   # Redirect Zig caches into the project directory so GitLab CI can cache them
   ZIG_GLOBAL_CACHE_DIR: "$CI_PROJECT_DIR/.cache/zig"
