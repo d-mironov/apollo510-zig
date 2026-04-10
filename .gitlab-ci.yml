@@ -1,0 +1,77 @@
+image: debian:bookworm-slim
+
+variables:
+  # You can pin a specific nightly version (e.g., "0.15.0-dev.123+abcdef") or use "master"
+  ZIG_VERSION: "master"
+  
+  # Redirect Zig caches into the project directory so GitLab CI can cache them
+  ZIG_GLOBAL_CACHE_DIR: "$CI_PROJECT_DIR/.cache/zig"
+  ZIG_LOCAL_CACHE_DIR: "$CI_PROJECT_DIR/.zig-cache"
+
+# Global cache configuration to speed up regz generation and compilation
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .cache/zig/
+    - .zig-cache/
+  policy: pull-push
+
+stages:
+  - lint
+  - build
+
+# ==========================================
+# Reusable Templates (YAML Anchors)
+# ==========================================
+
+.zig_setup:
+  before_script:
+    - apt-get update && apt-get install -y curl jq xz-utils git
+    - |
+      if [ "$ZIG_VERSION" = "master" ]; then
+        ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
+      else
+        ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+      fi
+    - echo "Downloading Zig from $ZIG_URL"
+    - curl -sL "$ZIG_URL" | tar -xJ -C /usr/local/bin --strip-components=1
+    - zig version
+
+# ==========================================
+# Linting Stage
+# ==========================================
+
+fmt:
+  stage: lint
+  extends: .zig_setup
+  script:
+    - zig fmt --check .
+  allow_failure: false
+
+# ==========================================
+# Build Stage
+# ==========================================
+
+# Build the firmware in ReleaseSmall (typical for embedded production)
+build_release:
+  stage: build
+  extends: .zig_setup
+  script:
+    - zig build -Doptimize=ReleaseSmall
+  artifacts:
+    name: "apollo510-firmware-release-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - zig-out/firmware/
+    expire_in: 1 week
+
+# Build the firmware in Debug (to catch comptime/assert errors early)
+build_debug:
+  stage: build
+  extends: .zig_setup
+  script:
+    - zig build -Doptimize=Debug
+  artifacts:
+    name: "apollo510-firmware-debug-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - zig-out/firmware/
+    expire_in: 1 week
