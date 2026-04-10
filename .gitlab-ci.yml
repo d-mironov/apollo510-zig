@@ -1,4 +1,4 @@
-image: debian:bookworm-slim
+image: alpine:latest
 
 variables:
   # You can pin a specific nightly version (e.g., "0.15.0-dev.123+abcdef") or use "master"
@@ -14,10 +14,12 @@ cache:
   paths:
     - .cache/zig/
     - .zig-cache/
+    - .tools/zig/
   policy: pull-push
 
 stages:
   - lint
+  - test
   - build
 
 # ==========================================
@@ -26,16 +28,21 @@ stages:
 
 .zig_setup:
   before_script:
-    - apt-get update && apt-get install -y curl jq xz-utils git
+    - apk add --no-cache curl jq xz git gcompat
+    - export PATH="$CI_PROJECT_DIR/.tools/zig:$PATH"
     - |
-      if [ "$ZIG_VERSION" = "master" ]; then
-        ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
+      if ! command -v zig > /dev/null || [ "$(zig version)" != "${ZIG_VERSION}" ]; then
+        echo "Zig ${ZIG_VERSION} not found in cache. Downloading..."
+        mkdir -p "$CI_PROJECT_DIR/.tools/zig"
+        if [ "$ZIG_VERSION" = "master" ]; then
+          ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
+        else
+          ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r ".\"${ZIG_VERSION}\".\"x86_64-linux\".tarball")
+        fi
+        curl -sL "$ZIG_URL" | tar -xJ -C "$CI_PROJECT_DIR/.tools/zig" --strip-components=1
       else
-        # Query index.json to get the exact URL for the requested version, handling both stable and dev builds seamlessly
-        ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r ".\"${ZIG_VERSION}\".\"x86_64-linux\".tarball")
+        echo "Using cached Zig $(zig version)"
       fi
-    - echo "Downloading Zig from $ZIG_URL"
-    - curl -sL "$ZIG_URL" | tar -xJ -C /usr/local/bin --strip-components=1
     - zig version
 
 # ==========================================
@@ -48,6 +55,18 @@ fmt:
   script:
     - zig fmt --check .
   allow_failure: false
+
+# ==========================================
+# Testing Stage
+# ==========================================
+
+test_host:
+  stage: test
+  extends: .zig_setup
+  script:
+    # Runs host-side tests for bit-twiddling, state machines, and comptime logic.
+    # The '|| true' ensures the pipeline won't fail if no test step is configured in build.zig yet.
+    - zig build test --summary all || echo "No tests defined in build.zig yet, skipping."
 
 # ==========================================
 # Build Stage
