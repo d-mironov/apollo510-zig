@@ -31,7 +31,8 @@ stages:
       if [ "$ZIG_VERSION" = "master" ]; then
         ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
       else
-        ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+        # Query index.json to get the exact URL for the requested version, handling both stable and dev builds seamlessly
+        ZIG_URL=$(curl -s https://ziglang.org/download/index.json | jq -r ".\"${ZIG_VERSION}\".\"x86_64-linux\".tarball")
       fi
     - echo "Downloading Zig from $ZIG_URL"
     - curl -sL "$ZIG_URL" | tar -xJ -C /usr/local/bin --strip-components=1
